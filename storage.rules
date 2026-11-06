@@ -9,6 +9,10 @@ service firebase.storage {
       allow read: if isAdmin();
       allow delete: if isAdmin() || (request.auth != null && request.auth.uid == uid);
     }
+    match /public/{submissionId}/{fileName} {
+      allow read: if true;
+      allow write: if false;
+    }
     match /{allPaths=**} { allow read, write: if false; }
   }
 }
