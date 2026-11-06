@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+    match /submissions/{submissionId} {
+      allow create: if request.auth != null
+        && request.resource.data.status == 'pending'
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['ownerUid','caption','category','mediaPath','mediaType','createdAt','status']);
+      allow read: if (resource.data.status == 'approved') || isAdmin();
+      allow update, delete: if isAdmin();
+    }
+    match /reports/{reportId} {
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['submissionId','reason','createdAt','reporterUid'])
+        && request.resource.data.reporterUid == request.auth.uid;
+      allow read, update, delete: if isAdmin();
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
