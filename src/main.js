@@ -86,6 +86,9 @@ function renderAdminState(user){
 }
 async function verifyAdmin(user){
  if(!user){renderAdminState(null);return;}
+ // Anonymous visitors must keep their Firebase session so they can submit.
+ // Only sign out authenticated, non-anonymous accounts that lack the admin claim.
+ if(user.isAnonymous){renderAdminState(null);return;}
  try{
   const token=await user.getIdTokenResult(true);
   if(token.claims.admin!==true){await signOut(auth);renderAdminState(null);showAdminMessage('This account does not have administrator access.');return;}
