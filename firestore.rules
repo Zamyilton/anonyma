@@ -6,9 +6,20 @@ service cloud.firestore {
     }
     match /submissions/{submissionId} {
       allow create: if request.auth != null
+        && request.resource.data.keys().hasAll(['ownerUid','caption','category','createdAt','status'])
+        && request.resource.data.keys().hasOnly(['ownerUid','caption','category','createdAt','status','mediaPath','mediaType'])
         && request.resource.data.status == 'pending'
         && request.resource.data.ownerUid == request.auth.uid
-        && request.resource.data.keys().hasOnly(['ownerUid','caption','category','mediaPath','mediaType','createdAt','status']);
+        && request.resource.data.caption is string
+        && request.resource.data.caption.size() <= 1200
+        && request.resource.data.category in ['Confessions','Photography','Memes','Videos','Random']
+        && (
+          request.resource.data.caption.size() > 0
+          || (request.resource.data.keys().hasAll(['mediaPath','mediaType'])
+            && request.resource.data.mediaPath is string
+            && request.resource.data.mediaPath.matches('submissions/' + request.auth.uid + '/.*')
+            && request.resource.data.mediaType.matches('(image/.*|video/.*)'))
+        );
       allow read: if (resource.data.status == 'approved') || isAdmin();
       allow update, delete: if isAdmin();
     }
