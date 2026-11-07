@@ -35,19 +35,25 @@ document.querySelector('#media').addEventListener('change', e=>{selectedFile=e.t
 document.querySelector('#submission-form').addEventListener('submit', async e=>{
  e.preventDefault(); const button=document.querySelector('#submit-button'), msg=document.querySelector('#form-message');
  if(!firebaseConfigured){msg.textContent='Firebase setup is not connected yet.';msg.className='form-message error';return;}
- if(!selectedFile){msg.textContent='Attach an image or video to continue.';msg.className='form-message error';return;}
+ const caption=document.querySelector('#caption').value.trim();
+ if(!selectedFile&&!caption){msg.textContent='Write something or attach an image/video before sending.';msg.className='form-message error';return;}
  if(selectedFile.size>100*1024*1024){msg.textContent='That file is over the 100 MB limit.';msg.className='form-message error';return;}
  if(!selectedFile.type.startsWith('image/')&&!selectedFile.type.startsWith('video/')){msg.textContent='Only image and video files are accepted.';msg.className='form-message error';return;}
  button.disabled=true;button.textContent='Sending...';msg.textContent='';
  let stage='authentication';
  try{
   const user=await ensureAnonymousSession();
-  stage='storage upload';
-  const safeName=selectedFile.name.replace(/[^a-zA-Z0-9._-]/g,'_');
-  const path=`submissions/${user.uid}/${Date.now()}-${safeName}`;
-  await uploadBytes(ref(storage,path),selectedFile,{contentType:selectedFile.type});
+  let mediaPath=null;
+  if(selectedFile){
+   stage='storage upload';
+   const safeName=selectedFile.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+   mediaPath=`submissions/${user.uid}/${Date.now()}-${safeName}`;
+   await uploadBytes(ref(storage,mediaPath),selectedFile,{contentType:selectedFile.type});
+  }
   stage='Firestore record creation';
-  await addDoc(collection(db,'submissions'),{ownerUid:user.uid,caption:document.querySelector('#caption').value.trim(),category:document.querySelector('#category').value,mediaPath:path,mediaType:selectedFile.type,createdAt:serverTimestamp(),status:'pending'});
+  const submission={ownerUid:user.uid,caption,category:document.querySelector('#category').value,createdAt:serverTimestamp(),status:'pending'};
+  if(mediaPath){submission.mediaPath=mediaPath;submission.mediaType=selectedFile.type;}
+  await addDoc(collection(db,'submissions'),submission);
   e.target.reset();selectedFile=null;document.querySelector('#file-label').textContent='Attach image or video';
   msg.textContent='Received. Your submission is waiting for review.';msg.className='form-message success';
  }catch(err){console.error('Submission failed during '+stage,err);msg.textContent=`Submission failed during ${stage}: ${err.code||'unknown error'}${err.message?` — ${err.message}`:''}`;msg.className='form-message error';}
@@ -62,8 +68,8 @@ async function loadFeed(){
   const q=query(collection(db,'submissions'),where('status','==','approved'),orderBy('createdAt','desc'),limit(30));
   const snap=await getDocs(q); const docs=snap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>activeFilter==='all'||x.category.toLowerCase()===activeFilter);
   if(!docs.length){feed.innerHTML='<div class="empty-state">Nothing here just yet.<br><span>Be the first to share something.</span></div>';return;}
-  feed.innerHTML=docs.map(x=>`<article class="media-card"><div class="media-frame" data-path="${escapeHtml(x.publicMediaPath || '')}"><span class="media-loading">Loading media</span></div><div class="media-meta"><span>${escapeHtml(x.category||'Random')}</span><span>ANONYMOUS</span></div>${x.caption?`<p>${escapeHtml(x.caption)}</p>`:''}</article>`).join('');
-  for(const card of feed.querySelectorAll('.media-frame')){try{if(!card.dataset.path) throw new Error('Public media path missing');const url=await getDownloadURL(ref(storage,card.dataset.path));const doc=docs.find(x=>x.publicMediaPath===card.dataset.path);card.innerHTML=doc.mediaType?.startsWith('video/')?`<video controls playsinline preload="metadata" src="${url}"></video>`:`<img loading="lazy" src="${url}" alt="Anonymous submission" />`;}catch{card.innerHTML='<span class="media-loading">Media unavailable</span>';}}
+  feed.innerHTML=docs.map(x=>`<article class="media-card">${x.publicMediaPath?`<div class="media-frame" data-path="${escapeHtml(x.publicMediaPath)}"><span class="media-loading">Loading media</span></div>`:''}<div class="media-meta"><span>${escapeHtml(x.category||'Random')}</span><span>ANONYMOUS</span></div>${x.caption?`<p>${escapeHtml(x.caption)}</p>`:''}</article>`).join('');
+  for(const card of feed.querySelectorAll('.media-frame')){try{const url=await getDownloadURL(ref(storage,card.dataset.path));const doc=docs.find(x=>x.publicMediaPath===card.dataset.path);card.innerHTML=doc.mediaType?.startsWith('video/')?`<video controls playsinline preload="metadata" src="${url}"></video>`:`<img loading="lazy" src="${url}" alt="Anonymous submission" />`;}catch{card.innerHTML='<span class="media-loading">Media unavailable</span>';}}
  }catch(err){console.error(err);feed.innerHTML='<div class="empty-state">The gallery could not load.<br><span>Check Firestore indexes and security rules.</span></div>';}
 }
 
@@ -116,8 +122,8 @@ async function loadPending(){
    return aTime-bTime;
   });
   if(!items.length){pendingList.innerHTML='<div class="empty-state">Queue clear.<br><span>No submissions waiting for review.</span></div>';return;}
-  pendingList.innerHTML=items.map(x=>`<article class="pending-card" data-id="${escapeHtml(x.id)}"><div class="pending-preview" data-media-path="${escapeHtml(x.mediaPath||'')}" data-media-type="${escapeHtml(x.mediaType||'')}"><span>Loading private preview...</span></div><div class="pending-details"><div class="media-meta"><span>${escapeHtml(x.category||'Random')}</span><span>AWAITING REVIEW</span></div><p>${escapeHtml(x.caption||'No caption supplied.')}</p><small>Received ${x.createdAt?.toDate?x.createdAt.toDate().toLocaleString():'recently'}</small><div class="pending-actions"><button class="button primary" data-action="approve">Approve</button><button class="button quiet" data-action="reject">Reject</button></div></div></article>`).join('');
-  for(const preview of pendingList.querySelectorAll('.pending-preview')){
+  pendingList.innerHTML=items.map(x=>`<article class="pending-card" data-id="${escapeHtml(x.id)}">${x.mediaPath?`<div class="pending-preview" data-media-path="${escapeHtml(x.mediaPath)}" data-media-type="${escapeHtml(x.mediaType||'')}"><span>Loading private preview...</span></div>`:'<div class="pending-preview text-only-preview">TEXT ONLY SUBMISSION</div>'}<div class="pending-details"><div class="media-meta"><span>${escapeHtml(x.category||'Random')}</span><span>AWAITING REVIEW</span></div><p>${escapeHtml(x.caption||'No caption supplied.')}</p><small>Received ${x.createdAt?.toDate?x.createdAt.toDate().toLocaleString():'recently'}</small><div class="pending-actions"><button class="button primary" data-action="approve">Approve</button><button class="button quiet" data-action="reject">Reject</button></div></div></article>`).join('');
+  for(const preview of pendingList.querySelectorAll('.pending-preview[data-media-path]')){
    try{const url=await getDownloadURL(ref(storage,preview.dataset.mediaPath));preview.innerHTML=preview.dataset.mediaType.startsWith('video/')?`<video controls playsinline preload="metadata" src="${url}"></video>`:`<img src="${url}" alt="Private submission preview" />`;}
    catch{preview.innerHTML='<span>Preview unavailable</span>';}
   }
