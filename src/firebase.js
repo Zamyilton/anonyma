@@ -5,7 +5,7 @@ import { getStorage } from 'firebase/storage';
 import { getAnalytics, isSupported } from 'firebase/analytics';
 
 const firebaseConfig = {
-  apiKey: 'AIzaSyBHf-s-lk1Zsj2V1yC__MLDBZAgypqA6cdM',
+  apiKey: 'AIzaSyBHfS-lk1Zsj2V1yC__MLDBZAgypqA6cdM',
   authDomain: 'anonyma-media.firebaseapp.com',
   projectId: 'anonyma-media',
   storageBucket: 'anonyma-media.firebasestorage.app',
