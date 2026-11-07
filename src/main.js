@@ -39,15 +39,18 @@ document.querySelector('#submission-form').addEventListener('submit', async e=>{
  if(selectedFile.size>100*1024*1024){msg.textContent='That file is over the 100 MB limit.';msg.className='form-message error';return;}
  if(!selectedFile.type.startsWith('image/')&&!selectedFile.type.startsWith('video/')){msg.textContent='Only image and video files are accepted.';msg.className='form-message error';return;}
  button.disabled=true;button.textContent='Sending...';msg.textContent='';
+ let stage='authentication';
  try{
   const user=await ensureAnonymousSession();
+  stage='storage upload';
   const safeName=selectedFile.name.replace(/[^a-zA-Z0-9._-]/g,'_');
   const path=`submissions/${user.uid}/${Date.now()}-${safeName}`;
   await uploadBytes(ref(storage,path),selectedFile,{contentType:selectedFile.type});
+  stage='Firestore record creation';
   await addDoc(collection(db,'submissions'),{ownerUid:user.uid,caption:document.querySelector('#caption').value.trim(),category:document.querySelector('#category').value,mediaPath:path,mediaType:selectedFile.type,createdAt:serverTimestamp(),status:'pending'});
   e.target.reset();selectedFile=null;document.querySelector('#file-label').textContent='Attach image or video';
   msg.textContent='Received. Your submission is waiting for review.';msg.className='form-message success';
- }catch(err){console.error(err);msg.textContent=err.code==='storage/unauthorized'?'Upload blocked by storage security rules.':'Could not submit right now. Check Firebase setup and try again.';msg.className='form-message error';}
+ }catch(err){console.error('Submission failed during '+stage,err);msg.textContent=`Submission failed during ${stage}: ${err.code||'unknown error'}${err.message?` — ${err.message}`:''}`;msg.className='form-message error';}
  finally{button.disabled=false;button.innerHTML='Send anonymously <span>↗</span>';}
 });
 
