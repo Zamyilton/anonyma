@@ -103,9 +103,15 @@ document.querySelector('#admin-logout').addEventListener('click',()=>signOut(aut
 async function loadPending(){
  pendingList.innerHTML='<div class="empty-state">Loading pending submissions...</div>';
  try{
-  const q=query(collection(db,'submissions'),where('status','==','pending'),orderBy('createdAt','asc'),limit(50));
+  // Keep this query on Firestore's automatic single-field index. Sorting locally
+  // avoids requiring a composite (status + createdAt) index just to moderate.
+  const q=query(collection(db,'submissions'),where('status','==','pending'),limit(50));
   const snap=await getDocs(q);
-  const items=snap.docs.map(d=>({id:d.id,...d.data()}));
+  const items=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>{
+   const aTime=a.createdAt?.toMillis?.() ?? 0;
+   const bTime=b.createdAt?.toMillis?.() ?? 0;
+   return aTime-bTime;
+  });
   if(!items.length){pendingList.innerHTML='<div class="empty-state">Queue clear.<br><span>No submissions waiting for review.</span></div>';return;}
   pendingList.innerHTML=items.map(x=>`<article class="pending-card" data-id="${escapeHtml(x.id)}"><div class="pending-preview" data-media-path="${escapeHtml(x.mediaPath||'')}" data-media-type="${escapeHtml(x.mediaType||'')}"><span>Loading private preview...</span></div><div class="pending-details"><div class="media-meta"><span>${escapeHtml(x.category||'Random')}</span><span>AWAITING REVIEW</span></div><p>${escapeHtml(x.caption||'No caption supplied.')}</p><small>Received ${x.createdAt?.toDate?x.createdAt.toDate().toLocaleString():'recently'}</small><div class="pending-actions"><button class="button primary" data-action="approve">Approve</button><button class="button quiet" data-action="reject">Reject</button></div></div></article>`).join('');
   for(const preview of pendingList.querySelectorAll('.pending-preview')){
